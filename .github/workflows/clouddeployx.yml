@@ -1,0 +1,32 @@
+name: CloudDeployX Deployment
+
+on:
+  repository_dispatch:
+    types: [clouddeployx_deployment]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: CloudDeployX Deployment Started
+        run: |
+          echo "CloudDeployX deployment triggered successfully"
+          echo "Project ID: ${{ github.event.client_payload.projectId }}"
+          echo "Deployment ID: ${{ github.event.client_payload.deploymentId }}"
+          echo "Branch: ${{ github.event.client_payload.branch }}"
+          echo "Commit: ${{ github.event.client_payload.commitHash }}"
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Verify Application
+        run: |
+          echo "Repository successfully checked out"
+          ls -la
+          test -f index.html
+          echo "index.html found"
+
+      - name: Deployment Complete
+        run: |
+          echo "CloudDeployX deployment pipeline completed successfully"
