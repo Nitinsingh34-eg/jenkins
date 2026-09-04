@@ -9,13 +9,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: CloudDeployX Deployment Started
+
+      - name: Notify CloudDeployX - Deployment Running
         run: |
-          echo "CloudDeployX deployment triggered successfully"
-          echo "Project ID: ${{ github.event.client_payload.projectId }}"
-          echo "Deployment ID: ${{ github.event.client_payload.deploymentId }}"
-          echo "Branch: ${{ github.event.client_payload.branch }}"
-          echo "Commit: ${{ github.event.client_payload.commitHash }}"
+          curl -X PUT \
+            "${{ github.event.client_payload.deploymentApiUrl }}/deployments/${{ github.event.client_payload.projectId }}/${{ github.event.client_payload.deploymentId }}/status" \
+            -H "Content-Type: application/json" \
+            -H "x-ci-secret: ${{ github.event.client_payload.ciSecret }}" \
+            -d '{
+              "status": "running",
+              "branch": "${{ github.event.client_payload.branch }}",
+              "logs": "[GITHUB ACTIONS] CI/CD pipeline started successfully."
+            }'
 
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -24,9 +29,40 @@ jobs:
         run: |
           echo "Repository successfully checked out"
           ls -la
-          test -f index.html
-          echo "index.html found"
+
+          if [ -f "index.html" ]; then
+            echo "Static HTML application detected."
+          else
+            echo "index.html not found!"
+            exit 1
+          fi
 
       - name: Deployment Complete
         run: |
           echo "CloudDeployX deployment pipeline completed successfully"
+
+      - name: Notify CloudDeployX - Deployment Success
+        if: success()
+        run: |
+          curl -X PUT \
+            "${{ github.event.client_payload.deploymentApiUrl }}/deployments/${{ github.event.client_payload.projectId }}/${{ github.event.client_payload.deploymentId }}/status" \
+            -H "Content-Type: application/json" \
+            -H "x-ci-secret: ${{ github.event.client_payload.ciSecret }}" \
+            -d '{
+              "status": "success",
+              "branch": "${{ github.event.client_payload.branch }}",
+              "logs": "[GITHUB ACTIONS] CI/CD pipeline completed successfully."
+            }'
+
+      - name: Notify CloudDeployX - Deployment Failed
+        if: failure()
+        run: |
+          curl -X PUT \
+            "${{ github.event.client_payload.deploymentApiUrl }}/deployments/${{ github.event.client_payload.projectId }}/${{ github.event.client_payload.deploymentId }}/status" \
+            -H "Content-Type: application/json" \
+            -H "x-ci-secret: ${{ github.event.client_payload.ciSecret }}" \
+            -d '{
+              "status": "failed",
+              "branch": "${{ github.event.client_payload.branch }}",
+              "logs": "[GITHUB ACTIONS] CI/CD pipeline failed."
+            }'
