@@ -8,61 +8,83 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
 
-    steps:
+    env:
+      PROJECT_ID: ${{ github.event.client_payload.projectId }}
+      DEPLOYMENT_ID: ${{ github.event.client_payload.deploymentId }}
+      BRANCH: ${{ github.event.client_payload.branch }}
+      COMMIT_HASH: ${{ github.event.client_payload.commitHash }}
+      DEPLOYMENT_API_URL: ${{ github.event.client_payload.deploymentApiUrl }}
+      CI_SECRET: ${{ github.event.client_payload.ciSecret }}
+      S3_BUCKET: clouddeployx-websites-483355779703
+      AWS_REGION: us-east-1
 
+    steps:
       - name: Notify CloudDeployX - Deployment Running
         run: |
-          curl -X PUT \
-            "${{ github.event.client_payload.deploymentApiUrl }}/deployments/${{ github.event.client_payload.projectId }}/${{ github.event.client_payload.deploymentId }}/status" \
+          curl --fail-with-body -X PUT \
+            "${DEPLOYMENT_API_URL}/deployments/${PROJECT_ID}/${DEPLOYMENT_ID}/status" \
             -H "Content-Type: application/json" \
-            -H "x-ci-secret: ${{ github.event.client_payload.ciSecret }}" \
+            -H "x-ci-secret: ${CI_SECRET}" \
             -d '{
               "status": "running",
-              "branch": "${{ github.event.client_payload.branch }}",
+              "branch": "'"${BRANCH}"'",
+              "commitHash": "'"${COMMIT_HASH}"'",
               "logs": "[GITHUB ACTIONS] CI/CD pipeline started successfully."
             }'
 
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.client_payload.branch || 'main' }}
 
       - name: Verify Application
         run: |
           echo "Repository successfully checked out"
           ls -la
+          test -f index.html
+          echo "index.html found"
 
-          if [ -f "index.html" ]; then
-            echo "Static HTML application detected."
-          else
-            echo "index.html not found!"
-            exit 1
-          fi
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
 
-      - name: Deployment Complete
+      - name: Deploy Website to Amazon S3
         run: |
-          echo "CloudDeployX deployment pipeline completed successfully"
+          aws s3 sync . "s3://${S3_BUCKET}/" \
+            --delete \
+            --exclude ".git/*" \
+            --exclude ".github/*"
 
       - name: Notify CloudDeployX - Deployment Success
-        if: success()
         run: |
-          curl -X PUT \
-            "${{ github.event.client_payload.deploymentApiUrl }}/deployments/${{ github.event.client_payload.projectId }}/${{ github.event.client_payload.deploymentId }}/status" \
+          LIVE_URL="http://${S3_BUCKET}.s3-website-${AWS_REGION}.amazonaws.com"
+
+          curl --fail-with-body -X PUT \
+            "${DEPLOYMENT_API_URL}/deployments/${PROJECT_ID}/${DEPLOYMENT_ID}/status" \
             -H "Content-Type: application/json" \
-            -H "x-ci-secret: ${{ github.event.client_payload.ciSecret }}" \
+            -H "x-ci-secret: ${CI_SECRET}" \
             -d '{
               "status": "success",
-              "branch": "${{ github.event.client_payload.branch }}",
-              "logs": "[GITHUB ACTIONS] CI/CD pipeline completed successfully."
+              "branch": "'"${BRANCH}"'",
+              "commitHash": "'"${COMMIT_HASH}"'",
+              "liveUrl": "'"${LIVE_URL}"'",
+              "logs": "[GITHUB ACTIONS] Website deployed successfully to Amazon S3."
             }'
+
+          echo "Deployment completed successfully"
+          echo "Live URL: ${LIVE_URL}"
 
       - name: Notify CloudDeployX - Deployment Failed
         if: failure()
         run: |
           curl -X PUT \
-            "${{ github.event.client_payload.deploymentApiUrl }}/deployments/${{ github.event.client_payload.projectId }}/${{ github.event.client_payload.deploymentId }}/status" \
+            "${DEPLOYMENT_API_URL}/deployments/${PROJECT_ID}/${DEPLOYMENT_ID}/status" \
             -H "Content-Type: application/json" \
-            -H "x-ci-secret: ${{ github.event.client_payload.ciSecret }}" \
+            -H "x-ci-secret: ${CI_SECRET}" \
             -d '{
               "status": "failed",
-              "branch": "${{ github.event.client_payload.branch }}",
               "logs": "[GITHUB ACTIONS] CI/CD pipeline failed."
-            }'
+            }' || true
